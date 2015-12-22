@@ -3,17 +3,22 @@
 /*  Copyright (c) 2015 UnitSoftware Giewon Grzegorz                                         */
 /*  Wszelkie prawa zastrzeżone                                                              */
 /*																							*/
-/*  Poniższy kod programu można używać i rozpowszechniać za darmo, pod warunkiem			*/
-/*  zachowania informacji o licencji i autorstwie.											*/
+/*  Poniższy kod programu można używać i rozpowszechniać za darmo pod warunkiem	zachowania  */
+/*  informacji o licencji i autorstwie.														*/
 /*																							*/
 /*  Poniższy kod udostępniony jest bez żadnej gwarancji, używasz go na własne ryzyko.		*/
-/*  Autor nie ponosi odpowiedzialności za szkody, utratę zysków, lub jakiekolwiek			*/
-/*  inne straty wynikłe w konsekwencji uzywania, lub niemożności użycia poniższego kodu.	*/
+/*  Autor nie ponosi odpowiedzialności za szkody, utratę zysków, lub jakiekolwiek inne      */
+/*  straty wynikłe w konsekwencji używania lub niemożności użycia poniższego kodu.			*/
 /*																							*/
 /*  Giewon Grzegorz, ggiewon@gmail.com														*/
 /********************************************************************************************/
+/* Kod powstał z pomocą kodów źródłowych AQma LED Control, których autorem jest Marcin Grunt*/
+/*																							*/
+/* Wszelkie prawa do AQma LED Control są zastrzeżone przez autora : Marcina Grunta.         */
+/* Więcej informacji o AQma pod adresem: http://magu.pl/aqma-led-control                    */
+/********************************************************************************************/
 
-// Dla kodu kompilowanego pod MEGA należy odkomentować
+// Dla kodu kompilowanego pod MEGA należy odkomentować - aktualnie brak dodatkowej funkcjonalności pod MEGA
 //#define MEGA
 
 #include <TFT_ILI9341.h>
@@ -621,6 +626,8 @@ void DisplayInfo(float radTemp, float waterTemp, byte pwm1Value, byte pwm2Value,
 
 void setup()
 {
+
+
 	/*********** Ustawienie częstotliwości PWM dla poszczególnych wyprowadzeń *******************/
 	/*********** D5 & D6 *******************/
 	//TCCR0B = TCCR0B & B11111000 | B00000001;    // set timer 0 divisor to     1 for PWM frequency of 62500.00 Hz
