@@ -20,8 +20,12 @@
 
 // Dla kodu kompilowanego pod MEGA należy odkomentować - aktualnie brak dodatkowej funkcjonalności pod MEGA
 //#define MEGA
+// Dla sterownika z LCD odkomentuj poniższą linię (dodaje około 12kb kodu)
+#define USE_LCD
 
-#include <TFT_ILI9341.h>
+#ifdef USE_LCD
+#include "TFT_ILI9341.h"
+#endif
 #include <SPI.h>
 #include <DS1307RTC.h>
 #include <Time.h>
@@ -59,7 +63,9 @@
 #define ERRORLED_PIN 7
 
 // lcd led backlight
+#ifdef USE_LCD
 #define LCDLED_PIN 16
+#endif
 
 // PWM pinouts
 #define PWM1_PIN 5
@@ -101,14 +107,17 @@
 #define CONFIG_MAXRADIATORTEMP_ADDRESS 250
 #define CONFIG_PWM_BEGIN_ADDRESS 282
 
+#ifdef USE_LCD
 /*********** PWM - definicje kolorów na wyświetlaczu LED ****************/
 #define PWM1_COLOR TFT_BLUE
 #define PWM2_COLOR TFT_WHITE
 #define PWM3_COLOR TFT_DARKCYAN
 
 #define FAN_COLOR TFT_DARKCYAN
+#endif
 
 /*********** Definicje elementów UI ****************/
+#ifdef USE_LCD
 #define UI_DISPLAY_POS_Y 40
 
 #define UI_STATUS_SYMBOL_X_DELTA 30
@@ -116,9 +125,12 @@
 #define UI_STATUS_SYMBOL_POS_X 300
 #define UI_PWM_SYMBOL_POSX 220
 #define UI_PWM_VALUE_POSX 240
+#endif
 
 /*********** Definicja wyświetlacza ****************/
+#ifdef USE_LCD
 TFT_ILI9341 tft = TFT_ILI9341();
+#endif
 
 /*********** Podświetlenie wyświetlacza ****************/
 byte lcdBacklightStatus = HIGH; // Domyślnie jest włączone
@@ -138,10 +150,16 @@ volatile bool isOverheated = false;
 tmElements_t actualTime;
 
 /*********** Ostatnio wyświetlana minuta ****************/
+#ifdef USE_LCD
 volatile byte lastDisplayedMinute;
+#endif
 
 /*********** PWM wentylatora ****************/
 byte pwmFanValue;
+
+/*********** Minimalna wartość PWM wentylatora ****************/
+// Minimalna wartość PWM dla której uruchamia się wentylator - wartość należy dobrać eksperymentalnie.
+#define FAN_MIN_PWM_VALUE 40
 
 /*********** Ilość kanałów PWM ****************/
 #define PWM_COUNT 3
@@ -149,7 +167,9 @@ byte pwmFanValue;
 /*********** PWM poszczególnych kanałów ****************/
 byte pwmPin[PWM_COUNT] = { PWM1_PIN, PWM2_PIN, PWM3_PIN };
 
+#ifdef USE_LCD
 uint16_t pwmColors[PWM_COUNT] = { PWM1_COLOR, PWM2_COLOR, PWM3_COLOR };
+#endif
 
 bool pwmEnable[PWM_COUNT] = { 0, 0, 0 };
 
@@ -421,9 +441,8 @@ byte CalculatePwmFanValue(float temp, float tempOff, float tempMax)
 	if (value > 100)
 		value = 100;
 
-	// Jeżeli wartość PWM jest poniżej 35 ustawiamy na 35 - poniżej 35 wentylator nie startuje (trzeba dobrać eksperymentalnie)
-	if (value < 35)
-		value = 35;
+	if (value < FAN_MIN_PWM_VALUE)
+		value = FAN_MIN_PWM_VALUE;
 
 	return value;
 }
@@ -508,6 +527,8 @@ void SetStatusLed(bool isError)
 	// Jeżeli doszliśmy do tego miejsca, oznacza to, że wszystko ok
 	digitalWrite(ERRORLED_PIN, STATUSLED_OK);
 }
+
+#ifdef USE_LCD
 
 // Metoda wyświetlająca datę i czas na wyświetlaczu
 void DisplayDateTime(tmElements_t time)
@@ -640,6 +661,8 @@ void DisplayInfo(float radTemp, float waterTemp, byte p_pwmVal[], byte pwmFanVal
 	DisplayTemp(160, UI_DISPLAY_POS_Y + UI_TEMP_POS_Y, waterTemp, 26, 30, 0, 'W');
 }
 
+#endif
+
 void setup()
 {
 	// Trzeba bezwzględnie wyłączyć watchdog'a na samym początku, gdyż w Atmega328 po resecie dalej jest on aktywny
@@ -677,20 +700,23 @@ void setup()
 
 	// Ustawiamy piny dla podświetlenia LCD oraz diody błędu jako wyjścia
 	pinMode(ERRORLED_PIN, OUTPUT);
+
+	// Set status led pin to OK
+	digitalWrite(ERRORLED_PIN, STATUSLED_OK);
+
+#ifdef USE_LCD
 	pinMode(LCDLED_PIN, OUTPUT);
 
 	// Włączamy podświetlenie LCD
 	digitalWrite(LCDLED_PIN, lcdBacklightStatus);
 
-	// Set status led pin to OK
-	digitalWrite(ERRORLED_PIN, STATUSLED_OK);
-
-	Serial.begin(9600);
-
 	// Inicjacja wyświetlacza
 	tft.init();
 	tft.setRotation(3);
 	tft.fillScreen(TFT_BLACK);
+#endif
+
+	Serial.begin(9600);
 
 	// Odczyt konfiguracji
 	ReadConfiguration();
@@ -761,6 +787,7 @@ void loop()
 
 	SetStatusLed(isTimeError || isTempError || isOverheated);
 
+#ifdef USE_LCD
 	// Aktualizujemy czas tylko jeżeli zmieniła się minuta, bo wyświetlanie skalowanej czcionki jest wolne i powoduje mruganie 
 	if (actualTime.Minute != lastDisplayedMinute)
 	{
@@ -770,4 +797,5 @@ void loop()
 
 	if (currentMillis % 1 == 0)
 		DisplayInfo(radiatorTemperature, waterTemperature, pwmValue, pwmFanValue, pwmEnable, pwmStatus, pwmPrevStatus, pwmColors);
+#endif
 }
