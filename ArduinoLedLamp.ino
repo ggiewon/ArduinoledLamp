@@ -29,6 +29,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
+#include <avr/wdt.h>
 
 /*********** Wersja ****************/
 #define SOFTWARE_VERSION "AQma LED Control, ver 0.0.1" // Aktualnie wymagane do współpracy z oprogramowaniem AQma
@@ -641,6 +642,10 @@ void DisplayInfo(float radTemp, float waterTemp, byte p_pwmVal[], byte pwmFanVal
 
 void setup()
 {
+	// Trzeba bezwzględnie wyłączyć watchdog'a na samym początku, gdyż w Atmega328 po resecie dalej jest on aktywny
+	// więcej można poczytać na http://mirekk36.blogspot.com/2012/10/watchdog-avr-prostsze-niz-myslisz.html
+	wdt_disable();
+
 	/*********** Ustawienie częstotliwości PWM dla poszczególnych wyprowadzeń *******************/
 	/*********** D5 & D6 *******************/
 	//TCCR0B = TCCR0B & B11111000 | B00000001;    // set timer 0 divisor to     1 for PWM frequency of 62500.00 Hz
@@ -689,11 +694,17 @@ void setup()
 
 	// Odczyt konfiguracji
 	ReadConfiguration();
+
+	// Ustawiamy watchdog'a na 1 sekundy
+	wdt_enable(WDTO_1S);
 }
 
 // Główna pętla
 void loop()
 {
+	// Resetujemy watchdog'a
+	wdt_reset();
+
 	long unsigned currentMillis = millis();
   
 	ReadConfiguration();
