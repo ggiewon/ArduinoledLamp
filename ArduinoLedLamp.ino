@@ -77,6 +77,9 @@
 #define CMD_PWM1					31
 #define CMD_PWM2					32
 #define CMD_PWM3					33
+#define CMD_PWM4					34
+#define CMD_PWM5					35
+#define CMD_PWM6					36
 #define CMD_SET_TIME				40
 #define CMD_GET_CONFIG_DATA			66
 #define CMD_GET_TIME				83
@@ -99,11 +102,14 @@
 
 /*********** PWM - definicje kolorów na wyświetlaczu LED ****************/
 #define PWM1_COLOR TFT_BLUE
-#define PWM2_COLOR TFT_YELLOW
+#define PWM2_COLOR TFT_WHITE
 #define PWM3_COLOR TFT_DARKCYAN
 
+#define FAN_COLOR TFT_DARKCYAN
+
 /*********** Definicje elementów UI ****************/
-#define UI_DISPLAY_POS_Y 50
+#define UI_DISPLAY_POS_Y 40
+
 #define UI_STATUS_SYMBOL_X_DELTA 30
 #define UI_TEMP_POS_Y 140
 #define UI_STATUS_SYMBOL_POS_X 300
@@ -142,12 +148,14 @@ byte pwmFanValue;
 /*********** PWM poszczególnych kanałów ****************/
 byte pwmPin[PWM_COUNT] = { PWM1_PIN, PWM2_PIN, PWM3_PIN };
 
+uint16_t pwmColors[PWM_COUNT] = { PWM1_COLOR, PWM2_COLOR, PWM3_COLOR };
+
 bool pwmEnable[PWM_COUNT] = { 0, 0, 0 };
 
 byte pwmStatus[PWM_COUNT] = { 0, 0, 0 };
+byte pwmPrevStatus[PWM_COUNT] = { 0, 0, 0 };
 
 byte pwmValue[PWM_COUNT] = { 0, 0, 0 };
-
 byte pwmLastValue[PWM_COUNT] = { 0, 0, 0 };
 
 byte pwmHStart[PWM_COUNT];
@@ -171,7 +179,7 @@ volatile float radiatorTemperature;
 volatile float waterTemperature;
 
 /*********** Max temperatura radiatora przy której lampa się wyłączy jako przegrzana ****************/
-byte maxRadiatorTemp = 60;
+byte maxRadiatorTemp; 
 
 /*********** Min temperatura przy której załączy się wentylator ****************/
 #define FAN_MIN_TEMP_ON 40
@@ -300,7 +308,7 @@ boolean ProcessCommand(char commandData[64])
 		Serial.println(response);
 	}
 
-	if ((val[0] == CMD_PWM1) || (val[0] == CMD_PWM2) || (val[0] == CMD_PWM3))
+	if ((val[0] == CMD_PWM1) || (val[0] == CMD_PWM2) || (val[0] == CMD_PWM3) || (val[0] == CMD_PWM4) || (val[0] == CMD_PWM5) || (val[0] == CMD_PWM6))
 	{ //          2         3            4        5          6          7         8        9          10        11       12         13
 		byte ePwm1Status, ePwm1HOn, ePwm1MOn, ePwm1SOn, ePwm1HOff, ePwm1MOff, ePwm1SOff, ePwm1Min, ePwm1Max, ePwm1Sr, ePwm1Ss, ePwm1KeepLight;
 
@@ -356,7 +364,7 @@ boolean ProcessCommand(char commandData[64])
 		else { return false; }         
 		if (val[4] >= 15 && val[4] <= 99) { setYear = val[4] + 2000; }
 		else { return false; }     
-		if (val[5] >= 1 && val[5] <= 99) { setMonth = val[5]; }
+		if (val[5] >= 1 && val[5] <= 12) { setMonth = val[5]; }
 		else { return false; }     
 		if (val[6] >= 1 && val[6] <= 31) { setDay = val[6]; }
 		else { return false; }     
@@ -420,8 +428,10 @@ byte CalculatePwmFanValue(float temp, float tempOff, float tempMax)
 }
 
 // Metoda wyliczająca wartość PWM
-byte CalculatePwmValue(unsigned long actualTime, unsigned long startSeconds, unsigned long endSeconds, byte minValue, byte maxValue, bool nightLight, byte sunriseValue, byte sunsetValue, bool pwmEnabled, byte *pwmSt)
+byte CalculatePwmValue(unsigned long actualTime, unsigned long startSeconds, unsigned long endSeconds, byte minValue, byte maxValue, bool nightLight, byte sunriseValue, byte sunsetValue, bool pwmEnabled, byte *pwmSt, byte *pwmPrevSt)
 {
+	*pwmPrevSt = *pwmSt;
+
 	if (!pwmEnabled)
 	{
 		*pwmSt = CHANNEL_STATUS_OFF;
@@ -470,14 +480,14 @@ byte CalculatePwmValue(unsigned long actualTime, unsigned long startSeconds, uns
 }
 
 // Metoda ustawiająca wartości na odpowiednich pinach dla kanałów LED oraz wentylatora
-void SetPwm(byte pwmValue[], byte pwmFanVal)
+void SetPwm(byte pwmValue[], byte pwmFanVal, byte p_pwmPrevValue[])
 {
 	byte pwmByteValue;
 
 	for (int i = 0; i < PWM_COUNT; i++)
 	{
 		pwmByteValue = map(pwmValue[i], 0, 100, 0, 255);
-
+		
 		analogWrite(pwmPin[i], pwmByteValue);
 	}
 
@@ -507,17 +517,17 @@ void DisplayDateTime(tmElements_t time)
 	// Display time and date
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
 	sprintf(tmp, "%02u:%02u", time.Hour, time.Minute);
-	tft.drawString(tmp, 40, UI_DISPLAY_POS_Y + 25, 4);
+	tft.drawString(tmp, 40, UI_DISPLAY_POS_Y + 15, 4);
 
 	memset(tmp, 0, 10);
 	tft.setTextSize(1);
 	sprintf(tmp, "%02u-%02u-%02u", tmYearToCalendar(time.Year), time.Month, time.Day);
-	tft.drawString(tmp, 40, UI_DISPLAY_POS_Y + 90, 4);
+	tft.drawString(tmp, 40, UI_DISPLAY_POS_Y + 80, 4);
 }
 
 void SetTemperatureTextColor(float temp, float okValue, float warningValue)
 {
-	if (temp <= okValue)
+	if (temp < okValue)
 		tft.setTextColor(TFT_GREEN, TFT_BLACK);
 	else if (temp < warningValue)
 		tft.setTextColor(TFT_YELLOW, TFT_BLACK);
@@ -534,48 +544,52 @@ void DisplayTemp(byte posX, byte posY, byte tempValue, byte tempWarning, byte te
 	memset(tmpTemp, 0, 5);
 	memset(tmp, 0, 10);
 
-	dtostrf(tempValue, 2, tempPrecision, tmpTemp);
-	sprintf(tmp, "%s: %s 'C", type, tmpTemp);
+	dtostrf(tempValue, 3, tempPrecision, tmpTemp);
+	sprintf(tmp, "%c: %s 'C", type, tmpTemp);
+
 	SetTemperatureTextColor(tempValue, tempWarning, tempError);
 	tft.drawString(tmp, posX, posY, 4);
 }
 
 // Metoda wyświetlająca informacje o PWM wentylatora
-void DisplayFanStatus(byte fanPwmValue)
+void DisplayFanStatus(byte fanPwmValue, byte pos_y)
 {
-	uint16_t color = TFT_DARKCYAN;
+	tft.fillCircle(UI_PWM_SYMBOL_POSX, pos_y + 10, 4, FAN_COLOR);
 
-	tft.fillCircle(UI_PWM_SYMBOL_POSX,    UI_DISPLAY_POS_Y + 110, 4, color);
-	tft.drawLine(UI_PWM_SYMBOL_POSX - 8,  UI_DISPLAY_POS_Y + 102, UI_PWM_SYMBOL_POSX + 8, UI_DISPLAY_POS_Y + 118, color);
-	tft.drawLine(UI_PWM_SYMBOL_POSX - 8,  UI_DISPLAY_POS_Y + 118, UI_PWM_SYMBOL_POSX + 8, UI_DISPLAY_POS_Y + 102, color);
-	tft.drawLine(UI_PWM_SYMBOL_POSX - 10, UI_DISPLAY_POS_Y + 110, UI_PWM_SYMBOL_POSX + 10, UI_DISPLAY_POS_Y + 110, color);
-	tft.drawLine(UI_PWM_SYMBOL_POSX,      UI_DISPLAY_POS_Y + 100, UI_PWM_SYMBOL_POSX, UI_DISPLAY_POS_Y + 120, color);
+	tft.drawLine(UI_PWM_SYMBOL_POSX - 8, pos_y + 2, UI_PWM_SYMBOL_POSX + 8, pos_y + 18, FAN_COLOR);
+	tft.drawLine(UI_PWM_SYMBOL_POSX - 8, pos_y + 18, UI_PWM_SYMBOL_POSX + 8, pos_y + 2, FAN_COLOR);
+	tft.drawLine(UI_PWM_SYMBOL_POSX - 10, pos_y + 10, UI_PWM_SYMBOL_POSX + 10, pos_y + 10, FAN_COLOR);
+	tft.drawLine(UI_PWM_SYMBOL_POSX, pos_y, UI_PWM_SYMBOL_POSX, pos_y + 20, FAN_COLOR);
 
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
 	char tmp[10];
 	memset(tmp, 0, 10);
-	sprintf(tmp, "%02u%%", fanPwmValue);
-	tft.drawString(tmp, UI_PWM_VALUE_POSX, UI_DISPLAY_POS_Y + 100, 4);
+	sprintf(tmp, "%02u %%", fanPwmValue);
+	tft.drawString(tmp, UI_PWM_VALUE_POSX, pos_y, 4);
 }
 
 // Metoda wyświetlająca status jednego kanału LED
-void DisplayStatus(byte status, byte pwmNo)
+void DisplayPwmStatus(byte status, byte pwmNo, byte prevStatus)
 {
-	byte y = pwmNo * UI_STATUS_SYMBOL_X_DELTA + UI_DISPLAY_POS_Y + 10;
+	byte y = (pwmNo * UI_STATUS_SYMBOL_X_DELTA) + UI_DISPLAY_POS_Y + 10;
 
-	if (status == CHANNEL_STATUS_OFF)
+	// Jeżeli status kanału uległ zmianie, czyścimy miejsce wyświetlenia, tak aby nie zostały śmieci po poprzednim statusie
+	if (prevStatus != status)
 	{
 		tft.fillRect(UI_STATUS_SYMBOL_POS_X - 1, y - 1, 12, 22, TFT_BLACK);
 	}
-	else if (status == CHANNEL_STATUS_SUNRIDE)
+
+	if (status == CHANNEL_STATUS_OFF)
 	{
-		tft.fillRect(UI_STATUS_SYMBOL_POS_X, y, 10, 20, TFT_BLACK);
+		//Niec nie trzeba robić
+	}
+	else if (status == CHANNEL_STATUS_SUNRIDE)
+	{		
 		tft.fillTriangle(UI_STATUS_SYMBOL_POS_X, y + 20, UI_STATUS_SYMBOL_POS_X + 10, y + 20, UI_STATUS_SYMBOL_POS_X + 5, y, TFT_GREEN); // Symbol wschodu słońca
 	}
 	else if (status == CHANNEL_STATUS_SUNSET)
 	{
-		tft.fillRect(UI_STATUS_SYMBOL_POS_X, y, 10, 20, TFT_BLACK);
 		tft.fillTriangle(UI_STATUS_SYMBOL_POS_X, y, UI_STATUS_SYMBOL_POS_X + 10, y, UI_STATUS_SYMBOL_POS_X + 5, y + 20, TFT_DARKGREY); // Symbol zachodu słońca
 	}
 	else if (status == CHANNEL_STATUS_ON)
@@ -589,14 +603,16 @@ void DisplayStatus(byte status, byte pwmNo)
 }
 
 // Metoda wyświetlająca info o jednym kanale PWM
-void DisplaySinglePwm(byte pwmValue, bool pwmStatus, byte posY, uint16_t color)
+void DisplaySinglePwm(byte pwmValue, bool p_pwmStatus, byte posY, uint16_t color)
 {
 	char tmp[10];
 
 	// Display pwm
 	tft.fillCircle(UI_PWM_SYMBOL_POSX, posY + 10, 10, color);
+
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
-	if (pwmStatus)
+
+	if (p_pwmStatus)
 	{
 		memset(tmp, 0, 10);
 		sprintf(tmp, "%02u %%", pwmValue);
@@ -607,18 +623,17 @@ void DisplaySinglePwm(byte pwmValue, bool pwmStatus, byte posY, uint16_t color)
 }
 
 // Metoda wyświetlająca dane na wyświetlaczu
-void DisplayInfo(float radTemp, float waterTemp, byte pwm1Value, byte pwm2Value, byte pwm3Value, byte pwm4Value, bool pwm1Status, bool pwm2Status, bool pwm3Status, byte pwm1St, byte pwm2St, byte pwm3St)
+void DisplayInfo(float radTemp, float waterTemp, byte p_pwmVal[], byte pwmFanValue, bool p_pwmStatus[], byte pwmSt[], byte pwmPrevSt[], uint16_t p_pwmColors[])
 {
-	DisplaySinglePwm(pwm1Value, pwm1Status, UI_DISPLAY_POS_Y + 10, PWM1_COLOR);
-	DisplayStatus(pwm1St, 0);
+	for (byte i = 0; i < PWM_COUNT ; i++)
+	{
+		int pos_y = UI_DISPLAY_POS_Y + 10 + (i * 30);
 
-	DisplaySinglePwm(pwm2Value, pwm2Status, UI_DISPLAY_POS_Y + 40, PWM2_COLOR);
-	DisplayStatus(pwm2St, 0);
+		DisplaySinglePwm(p_pwmVal[i], p_pwmStatus[i], pos_y, p_pwmColors[i]);
+		DisplayPwmStatus(pwmSt[i], i, pwmPrevSt[i]);
+	}
 
-	DisplaySinglePwm(pwm3Value, pwm3Status, UI_DISPLAY_POS_Y + 70, PWM3_COLOR);
-	DisplayStatus(pwm3St, 0);
-
-	DisplayFanStatus(pwm4Value);
+	DisplayFanStatus(pwmFanValue, UI_DISPLAY_POS_Y + 10 + (PWM_COUNT * 30));
 
 	DisplayTemp(50, UI_DISPLAY_POS_Y + UI_TEMP_POS_Y, radTemp, FAN_MIN_TEMP_ON, maxRadiatorTemp, 0, 'R');
 	DisplayTemp(160, UI_DISPLAY_POS_Y + UI_TEMP_POS_Y, waterTemp, 26, 30, 0, 'W');
@@ -626,8 +641,6 @@ void DisplayInfo(float radTemp, float waterTemp, byte pwm1Value, byte pwm2Value,
 
 void setup()
 {
-
-
 	/*********** Ustawienie częstotliwości PWM dla poszczególnych wyprowadzeń *******************/
 	/*********** D5 & D6 *******************/
 	//TCCR0B = TCCR0B & B11111000 | B00000001;    // set timer 0 divisor to     1 for PWM frequency of 62500.00 Hz
@@ -711,23 +724,29 @@ void loop()
 	// Jeżeli jest przegrzana ustawiamy wszystkie kanały światła na 0, a wentylator na 100
 	if (isOverheated)
 	{
-		for (int i = 0; i < sizeof(pwmValue); i++)
+		for (int i = 0; i < PWM_COUNT; i++)
+		{
 			pwmValue[i] = 0;
+			pwmStatus[i] = CHANNEL_STATUS_OFF;
+		}			
 
 		pwmFanValue = 100;
 	}
 	else
 	{
-		for (int i = 0; i < sizeof(pwmValue); i++)
+		for (int i = 0; i < PWM_COUNT; i++)
 		{
-			pwmValue[i] = CalculatePwmValue(CalculateSeconds(actualTime.Hour, actualTime.Minute, actualTime.Second), CalculateSeconds(pwmHStart[i], pwmMStart[i], pwmSStart[i]), CalculateSeconds(pwmHEnd[i], pwmMEnd[i], pwmSEnd[i]), 
-								pwmMin[i], pwmMax[i], pwmNightLight[i], pwmSunrise[i], pwmSunset[i], pwmEnable[i], pwmStatus + i);
+			unsigned long actualSeconds = CalculateSeconds(actualTime.Hour, actualTime.Minute, actualTime.Second);
+			unsigned long pwmStartSeconds = CalculateSeconds(pwmHStart[i], pwmMStart[i], pwmSStart[i]);
+			unsigned long pwmEndSeconds = CalculateSeconds(pwmHEnd[i], pwmMEnd[i], pwmSEnd[i]);
+
+			pwmValue[i] = CalculatePwmValue(actualSeconds, pwmStartSeconds, pwmEndSeconds, pwmMin[i], pwmMax[i], pwmNightLight[i], pwmSunrise[i], pwmSunset[i], pwmEnable[i], pwmStatus + i, pwmPrevStatus + i);
 		}
 
 		pwmFanValue = CalculatePwmFanValue(radiatorTemperature, FAN_MIN_TEMP_ON, maxRadiatorTemp);
 	}
 
-	SetPwm(pwmValue, pwmFanValue);
+	SetPwm(pwmValue, pwmFanValue, pwmLastValue);
 
 	SetStatusLed(isTimeError || isTempError || isOverheated);
 
@@ -739,5 +758,5 @@ void loop()
 	}
 
 	if (currentMillis % 1 == 0)
-		DisplayInfo(radiatorTemperature, waterTemperature, pwmValue[0], pwmValue[1], pwmValue[2], pwmFanValue, pwmEnable[0], pwmEnable[1], pwmEnable[2], pwmStatus[0], pwmStatus[1], pwmStatus[2]);
+		DisplayInfo(radiatorTemperature, waterTemperature, pwmValue, pwmFanValue, pwmEnable, pwmStatus, pwmPrevStatus, pwmColors);
 }
