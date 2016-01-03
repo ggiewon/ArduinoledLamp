@@ -155,11 +155,16 @@ volatile byte lastDisplayedMinute;
 #endif
 
 /*********** PWM wentylatora ****************/
-byte pwmFanValue;
+byte pwmFanValue = 0;
+
+byte pwmLastFanValue = 0;
 
 /*********** Minimalna wartość PWM wentylatora ****************/
 // Minimalna wartość PWM dla której uruchamia się wentylator - wartość należy dobrać eksperymentalnie.
-#define FAN_MIN_PWM_VALUE 40
+#define FAN_MIN_PWM_VALUE 50
+
+// Wartość rozruchowa, ustawiana abu poruszyć wirnik wentylatora, jeżeli wentylator był zatrzymany
+#define FAN_START_PWM_VALUE 80
 
 /*********** Ilość kanałów PWM ****************/
 #define PWM_COUNT 3
@@ -500,7 +505,7 @@ byte CalculatePwmValue(unsigned long actualTime, unsigned long startSeconds, uns
 }
 
 // Metoda ustawiająca wartości na odpowiednich pinach dla kanałów LED oraz wentylatora
-void SetPwm(byte pwmValue[], byte pwmFanVal, byte p_pwmPrevValue[])
+void SetPwm(byte pwmValue[], byte pwmFanVal, byte p_pwmPrevValue[], byte* p_pwmFanPrevValue)
 {
 	byte pwmByteValue;
 
@@ -508,10 +513,21 @@ void SetPwm(byte pwmValue[], byte pwmFanVal, byte p_pwmPrevValue[])
 	{
 		pwmByteValue = map(pwmValue[i], 0, 100, 0, 255);
 		
+		p_pwmPrevValue[i] = pwmByteValue;
+
 		analogWrite(pwmPin[i], pwmByteValue);
 	}
 
+	// Niestety często wentylator niechce się kręcić przy niskiej wartości PWM, więć ustawiamy wartość na max aby poruszyć wirnik		
+	if ((pwmFanVal > 0) && (*p_pwmFanPrevValue == 0))
+	{		
+		pwmFanVal = FAN_START_PWM_VALUE;
+	}
+
+	*p_pwmFanPrevValue = pwmFanVal;
+
 	analogWrite(PWM_FAN_PIN, map(pwmFanVal, 0, 100, 0, 255));
+
 }
 
 // Metoda ustawiająca stan diody
@@ -721,7 +737,7 @@ void setup()
 	// Odczyt konfiguracji
 	ReadConfiguration();
 
-	// Ustawiamy watchdog'a na 1 sekundy
+	// Ustawiamy watchdog'a na 1 sekunde
 	wdt_enable(WDTO_1S);
 }
 
@@ -783,7 +799,7 @@ void loop()
 		pwmFanValue = CalculatePwmFanValue(radiatorTemperature, FAN_MIN_TEMP_ON, maxRadiatorTemp);
 	}
 
-	SetPwm(pwmValue, pwmFanValue, pwmLastValue);
+	SetPwm(pwmValue, pwmFanValue, pwmLastValue, &pwmLastFanValue);
 
 	SetStatusLed(isTimeError || isTempError || isOverheated);
 
