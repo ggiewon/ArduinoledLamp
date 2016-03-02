@@ -20,6 +20,7 @@
 
 // Dla kodu kompilowanego pod MEGA należy odkomentować - aktualnie brak dodatkowej funkcjonalności pod MEGA
 //#define MEGA
+
 // Dla sterownika z LCD odkomentuj poniższą linię (dodaje około 12kb kodu)
 #define USE_LCD
 
@@ -36,7 +37,7 @@
 #include <avr/wdt.h>
 
 /*********** Wersja ****************/
-#define SOFTWARE_VERSION "AQma LED Control, ver 0.0.1" // Aktualnie wymagane do współpracy z oprogramowaniem AQma
+#define SOFTWARE_VERSION "AQma LED Control, v1" // Aktualnie wymagane do współpracy z oprogramowaniem AQma
 
 /*********** Definicje pinów ****************/
 #ifdef MEGA
@@ -271,6 +272,7 @@ String ReadCommandFromSerial()
 void ReadTemperatures()
 {
 	sensors.requestTemperatures();
+	
 	radiatorTemperature = sensors.getTempC(radiatorSensor);
 	waterTemperature = sensors.getTempC(waterSensor);
 }
@@ -412,6 +414,9 @@ boolean ProcessCommand(char commandData[64])
 			Serial.print(EEPROM.read(eAddress));
 			Serial.write(",");
 			eAddress++;
+
+			// Resetujemy watchdog'a, gdyż odczyt danych z pamieci EEPROM i wysłanie do portu szeregowego jest bardzo wolne i trwa dłużej niż założoną sekundę
+			wdt_reset();
 		}
 		Serial.write("#\n");
 	}
@@ -443,8 +448,8 @@ byte CalculatePwmFanValue(float temp, float tempOff, float tempMax)
 
 	byte value = (temp - tempOff) * 100 / (tempMax - tempOff);
 
-	if (value > 100)
-		value = 100;
+	if (value > 99)
+		value = 99;
 
 	if (value < FAN_MIN_PWM_VALUE)
 		value = FAN_MIN_PWM_VALUE;
@@ -565,7 +570,9 @@ void DisplayDateTime(tmElements_t time)
 
 void SetTemperatureTextColor(float temp, float okValue, float warningValue)
 {
-	if (temp < okValue)
+	if (temp == -127)
+		tft.setTextColor(TFT_RED, TFT_BLACK);
+	else if (temp < okValue)
 		tft.setTextColor(TFT_GREEN, TFT_BLACK);
 	else if (temp < warningValue)
 		tft.setTextColor(TFT_YELLOW, TFT_BLACK);
@@ -574,15 +581,19 @@ void SetTemperatureTextColor(float temp, float okValue, float warningValue)
 }
 
 // Metoda wyświetlająca temperaturę
-void DisplayTemp(byte posX, byte posY, byte tempValue, byte tempWarning, byte tempError, byte tempPrecision, char type)
+void DisplayTemp(byte posX, byte posY, float tempValue, byte tempWarning, byte tempError, byte tempPrecision, char type)
 {
-	char tmpTemp[5];
-	char tmp[10];
+	char tmpTemp[6];
+	char tmp[12];
 
-	memset(tmpTemp, 0, 5);
-	memset(tmp, 0, 10);
+	memset(tmpTemp, 0, 6);
+	memset(tmp, 0, 12);
 
-	dtostrf(tempValue, 3, tempPrecision, tmpTemp);
+	if (tempValue == -127)
+		sprintf(tmpTemp, "%s", "??");
+	else
+		dtostrf(tempValue, 3, tempPrecision, tmpTemp);
+
 	sprintf(tmp, "%c: %s 'C", type, tmpTemp);
 
 	SetTemperatureTextColor(tempValue, tempWarning, tempError);
@@ -674,7 +685,7 @@ void DisplayInfo(float radTemp, float waterTemp, byte p_pwmVal[], byte pwmFanVal
 	DisplayFanStatus(pwmFanValue, UI_DISPLAY_POS_Y + 10 + (PWM_COUNT * 30));
 
 	DisplayTemp(50, UI_DISPLAY_POS_Y + UI_TEMP_POS_Y, radTemp, FAN_MIN_TEMP_ON, maxRadiatorTemp, 0, 'R');
-	DisplayTemp(160, UI_DISPLAY_POS_Y + UI_TEMP_POS_Y, waterTemp, 26, 30, 0, 'W');
+	DisplayTemp(160, UI_DISPLAY_POS_Y + UI_TEMP_POS_Y, waterTemp, 26, 30, 1, 'W');
 }
 
 #endif
@@ -719,6 +730,10 @@ void setup()
 
 	// Set status led pin to OK
 	digitalWrite(ERRORLED_PIN, STATUSLED_OK);
+
+#ifdef USE_WATER_CONTROL
+  pinMode(LCDLED_PIN, OUTPUT);
+#endif
 
 #ifdef USE_LCD
 	pinMode(LCDLED_PIN, OUTPUT);
@@ -783,7 +798,7 @@ void loop()
 			pwmStatus[i] = CHANNEL_STATUS_OFF;
 		}			
 
-		pwmFanValue = 100;
+		pwmFanValue = 99;
 	}
 	else
 	{
